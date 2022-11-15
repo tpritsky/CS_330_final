@@ -1,0 +1,4 @@
+.DS_Store
+runs/
+__pycache__/
+scratch_work.ipynb
