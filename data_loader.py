@@ -14,7 +14,7 @@ class DataGenerator(IterableDataset):
     """
 
     def __init__(self, data_json_path, k):
-        self.df = pd.DataFrame(json.load(open(data_json_path)))[:10]
+        self.df = pd.DataFrame(json.load(open(data_json_path)))
         self.size = self.df.shape[0]
         self.k = k
 

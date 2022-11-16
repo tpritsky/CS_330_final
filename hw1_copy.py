@@ -119,7 +119,7 @@ def main(config):
 
     # Create Data Generator
     train_iterable = DataGenerator(
-        data_json_path='data/dataset.json',
+        data_json_path='data/train.json',
         k=config.num_shot,
     )
     train_loader = iter(
@@ -132,7 +132,7 @@ def main(config):
     )
 
     test_iterable = DataGenerator(
-        data_json_path='data/dataset.json',  # TODO: add test split
+        data_json_path='data/test.json',
         k=config.num_shot,
     )
     test_loader = iter(
@@ -206,13 +206,13 @@ def main(config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_classes", type=int, default=2)
-    parser.add_argument("--num_shot", type=int, default=10)
+    parser.add_argument("--num_shot", type=int, default=20)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--eval_freq", type=int, default=100)
+    parser.add_argument("--eval_freq", type=int, default=500)
     parser.add_argument("--meta_batch_size", type=int, default=128)
-    parser.add_argument("--hidden_dim", type=int, default=128)
+    parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--random_seed", type=int, default=123)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
     main(parser.parse_args())
