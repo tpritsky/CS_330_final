@@ -19,7 +19,7 @@ class DataGenerator(IterableDataset):
         self.k = k
 
         # Load pre-computed smiles embeddings
-        with open('data/smiles_to_embeddings.pickle', 'rb') as f:
+        with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
             self.smiles_embeddings = pickle.load(f)
 
     def _sample(self):
