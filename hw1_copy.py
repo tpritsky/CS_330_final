@@ -31,7 +31,8 @@ class MANN(nn.Module):
         self.samples_per_class = samples_per_class
 
         self.layer1 = torch.nn.LSTM(
-            num_classes + 767, hidden_dim, batch_first=True
+            num_classes + 767 + 640, hidden_dim, batch_first=True  
+            # smiles_embedding_dim = 767, protein_embedding_dim = 640
         )
         self.layer2 = torch.nn.LSTM(hidden_dim, num_classes, batch_first=True)
         initialize_weights(self.layer1)

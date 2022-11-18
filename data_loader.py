@@ -1,11 +1,14 @@
 import json
+import gzip
+import pickle
+from collections import defaultdict
+
+import numpy as np
+import pandas as pd
+
 import torch
 from torch.utils.data import IterableDataset
-import pandas as pd
-import numpy as np
-from collections import defaultdict
 from transformers import AutoTokenizer, AutoModelForMaskedLM
-import pickle
 
 
 class DataGenerator(IterableDataset):
@@ -21,6 +24,13 @@ class DataGenerator(IterableDataset):
         # Load pre-computed smiles embeddings
         with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
             self.smiles_embeddings = pickle.load(f)
+        
+        # Load and preprocess pre-computed protein embeddings
+        with gzip.open('embeddings/esm2_t30_150M_UR50D.json.gz', 'r') as fin:
+            esm2 = json.loads(fin.read().decode('utf-8'))
+        self.protein_embeddings = {label[8:]:np.array(sample) for label, sample in zip(esm2['labels'],  esm2['samples'])}
+            # keys:     task number (string) ex. '54'
+            # values:   protein embedding for protein task (np.array of shape (640,))
 
     def _sample(self):
         """
@@ -45,16 +55,20 @@ class DataGenerator(IterableDataset):
         smiles_embeddings_1 = np.stack(list(map(lambda s: self.smiles_embeddings[s], smiles_batch_1)))
         smiles_embeddings = np.stack([smiles_embeddings_0, smiles_embeddings_1], axis=1)
 
+        # Generate pretrained protein embedding
+        protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+1, 2, 1))
+            # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
+
         # Assign labels
         labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+1, axis=0)
 
         # Shuffle query set
-        embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)
+        embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         np.random.shuffle(embeddings_and_labels[-1])
-        smiles_embeddings = embeddings_and_labels[..., : -2]
+        embeddings = embeddings_and_labels[..., : -2]
         labels = embeddings_and_labels[..., -2 :]
 
-        return (smiles_embeddings, labels)
+        return (embeddings, labels)
 
     def __iter__(self):
         while True:
