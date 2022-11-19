@@ -1,18 +1,16 @@
 import argparse
-
-import os
 import random
-import torch
-import math
-import numpy as np
-import torch.nn.functional as F
-from torch import nn, Tensor
-from data_loader import DataGenerator
-from google_drive_downloader import GoogleDriveDownloader as gdd
-from torch.utils.tensorboard import SummaryWriter
-import torchvision
 import json
+
+import numpy as np
 import pandas as pd
+
+import torch
+from torch import nn, Tensor
+import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
+
+from data_loader import DataGenerator
 from tqdm import tqdm
 
 def initialize_weights(model):
