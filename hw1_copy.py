@@ -113,7 +113,7 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.num_classes}_{config.num_shot}_{config.random_seed}_{config.hidden_dim}"
+        f"runs/concat_embeds_{config.num_classes}_{config.num_shot}_{config.random_seed}_{config.hidden_dim}_{config.learning_rate}"
     )
 
     # Create Data Generator
