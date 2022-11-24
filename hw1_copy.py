@@ -113,7 +113,7 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_{config.random_seed}_{config.hidden_dim}_LR{config.learning_rate}"
+        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}"
     )
 
     # Create Data Generator
