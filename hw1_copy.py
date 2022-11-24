@@ -113,12 +113,12 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.repr}_{config.num_classes}_{config.num_shot}_{config.random_seed}_{config.hidden_dim}_{config.learning_rate}"
+        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}"
     )
 
     # Create Data Generator
     train_iterable = DataGenerator(
-        data_json_path='data/train.json',
+        data_json_path=f'data/{config.dataset}_train.json',
         k=config.num_shot,
         repr=config.repr,
     )
@@ -132,7 +132,7 @@ def main(config):
     )
 
     test_iterable = DataGenerator(
-        data_json_path='data/test.json',
+        data_json_path=f'data/{config.dataset}_test.json',
         k=config.num_shot,
         repr=config.repr,
     )
@@ -219,5 +219,6 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
-    parser.add_argument("--repr", type=str, default="smiles_only")
+    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "concat"
+    parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
     main(parser.parse_args())
