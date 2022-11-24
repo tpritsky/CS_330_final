@@ -118,7 +118,7 @@ def main(config):
 
     # Create Data Generator
     train_iterable = DataGenerator(
-        data_json_path='data/train.json',
+        data_json_path='data/full_train.json',
         k=config.num_shot,
         repr=config.repr,
     )
@@ -132,7 +132,7 @@ def main(config):
     )
 
     test_iterable = DataGenerator(
-        data_json_path='data/test.json',
+        data_json_path='data/full_test.json',
         k=config.num_shot,
         repr=config.repr,
     )
