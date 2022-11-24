@@ -16,10 +16,11 @@ class DataGenerator(IterableDataset):
     Class for generating batches of target protein affinity data.
     """
 
-    def __init__(self, data_json_path, k):
+    def __init__(self, data_json_path, k, repr):
         self.df = pd.DataFrame(json.load(open(data_json_path)))
         self.size = self.df.shape[0]
         self.k = k
+        self.repr = repr
 
         # Load pre-computed smiles embeddings
         with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
@@ -63,7 +64,10 @@ class DataGenerator(IterableDataset):
         labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+1, axis=0)
 
         # Shuffle query set
-        embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
+        if self.repr == "concat":
+            embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
+        else:  # default to "smiles_only"
+            embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)
         np.random.shuffle(embeddings_and_labels[-1])
         embeddings = embeddings_and_labels[..., : -2]
         labels = embeddings_and_labels[..., -2 :]

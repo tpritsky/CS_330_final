@@ -25,14 +25,14 @@ def initialize_weights(model):
 
 
 class MANN(nn.Module):
-    def __init__(self, num_classes, samples_per_class, hidden_dim):
+    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim):
         super(MANN, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
+        self.input_dim = input_dim 
 
         self.layer1 = torch.nn.LSTM(
-            num_classes + 767 + 640, hidden_dim, batch_first=True  
-            # smiles_embedding_dim = 767, protein_embedding_dim = 640
+            input_dim, hidden_dim, batch_first=True  
         )
         self.layer2 = torch.nn.LSTM(hidden_dim, num_classes, batch_first=True)
         initialize_weights(self.layer1)
@@ -113,13 +113,14 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/concat_embeds_{config.num_classes}_{config.num_shot}_{config.random_seed}_{config.hidden_dim}_{config.learning_rate}"
+        f"runs/{config.repr}_{config.num_classes}_{config.num_shot}_{config.random_seed}_{config.hidden_dim}_{config.learning_rate}"
     )
 
     # Create Data Generator
     train_iterable = DataGenerator(
         data_json_path='data/train.json',
         k=config.num_shot,
+        repr=config.repr,
     )
     train_loader = iter(
         torch.utils.data.DataLoader(
@@ -133,6 +134,7 @@ def main(config):
     test_iterable = DataGenerator(
         data_json_path='data/test.json',
         k=config.num_shot,
+        repr=config.repr,
     )
     test_loader = iter(
         torch.utils.data.DataLoader(
@@ -143,8 +145,11 @@ def main(config):
         )
     )
 
+    repr_to_input_dims = {"smiles_only": config.num_classes + 767, "concat": config.num_classes + 767 + 640}
+    # smiles_embedding_dim = 767, protein_embedding_dim = 640
+
     # Create model
-    model = MANN(config.num_classes, config.num_shot + 1, config.hidden_dim)
+    model = MANN(config.num_classes, config.num_shot + 1, config.hidden_dim, repr_to_input_dims[config.repr])
     model.to(device)
 
     # Create optimizer
@@ -214,4 +219,5 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
+    parser.add_argument("--repr", type=str, default="smiles_only")
     main(parser.parse_args())
