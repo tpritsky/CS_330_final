@@ -118,17 +118,7 @@ def main(config):
     writer = SummaryWriter(
         f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}"
     )
-    wandb.config = {
-        "num_classes": config.num_classes,
-        "num_shot": config.num_shot,
-        "protein_ligand_representation": config.repr,
-        "dataset": config.dataset,
-        "hidden_dim": config.hidden_dim,
-        "learning_rate": config.learning_rate,
-        "batch_size": config.meta_batch_size,
-        "training_steps": config.train_steps,
-        "random_seed": config.random_seed
-    }
+    wandb.config.update(config)
 
     # Create Data Generator
     train_iterable = DataGenerator(
@@ -222,7 +212,7 @@ def main(config):
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
-            wandb.log({"Tample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
+            wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
             times = []
 
 if __name__ == "__main__":
