@@ -23,7 +23,7 @@ class DataGenerator(IterableDataset):
         self.repr = repr
 
         # Load pre-computed smiles embeddings
-        with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
+        with open('data/smiles_to_embeddings.pickle', 'rb') as f:
             self.smiles_embeddings = pickle.load(f)
         
         # Load and preprocess pre-computed protein embeddings

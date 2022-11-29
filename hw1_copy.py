@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from data_loader import DataGenerator
 from tqdm import tqdm
 
-import wandb
+# import wandb
 
 def initialize_weights(model):
     if type(model) in [nn.Linear]:
@@ -111,8 +111,8 @@ def main(config):
     np.random.seed(config.random_seed)
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        wandb.init(project="meta_bindingdb", entity="davidekuo")
-        wandb.config.update(config)
+        # wandb.init(project="meta_bindingdb", entity="davidekuo")
+        # wandb.config.update(config)
     else:
         device = torch.device("cpu")
 
@@ -168,6 +168,7 @@ def main(config):
     import time
 
     times = []
+    best_val_acc = 0
     for step in tqdm(range(config.train_steps)):
         ## Sample Batch
         t0 = time.time()
@@ -180,8 +181,8 @@ def main(config):
         t2 = time.time()
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
-        if device == torch.device("cuda"):
-            wandb.log({"Loss/train": ls})
+        # if device == torch.device("cuda"):
+        #     wandb.log({"Loss/train": ls})
 
         ## Evaluate
         if (step + 1) % config.eval_freq == 0:
@@ -197,8 +198,8 @@ def main(config):
             )
             writer.add_scalar("Loss/test", tls, step)
 
-            if device == torch.device("cuda"):
-                wandb.log({"Loss/test": tls})
+            # if device == torch.device("cuda"):
+            #     wandb.log({"Loss/test": tls})
 
             pred = torch.reshape(
                 pred,
@@ -214,20 +215,26 @@ def main(config):
             acc = pred.eq(l).sum().item() / (
                 config.meta_batch_size * config.num_classes
             )
-            print("Test Accuracy", acc)
-            writer.add_scalar("Accuracy/test", acc, step)
+            print("Val Accuracy", acc)
+            writer.add_scalar("Accuracy/val", acc, step)
 
-            if device == torch.device("cuda"):
-                wandb.log({"Accuracy/test": acc})
+            if acc > best_val_acc:
+                torch.save(model, 'model/model.pt')
+                print("Saved model.")
+                best_val_acc = acc
+
+            # if device == torch.device("cuda"):
+            #     wandb.log({"Accuracy/test": acc})
 
             times = np.array(times)
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
-            if device == torch.device("cuda"):
-                wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
+            # if device == torch.device("cuda"):
+            #     wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
 
             times = []
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

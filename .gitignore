@@ -6,3 +6,5 @@ scratch_work.ipynb
 .pickle
 .vscode
 .idea
+data/smiles_to_embeddings.pickle
+model/
