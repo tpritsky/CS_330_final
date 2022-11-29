@@ -23,15 +23,22 @@ class DataGenerator(IterableDataset):
         self.repr = repr
 
         # Load pre-computed smiles embeddings
-        with open('data/smiles_to_embeddings.pickle', 'rb') as f:
+        with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
             self.smiles_embeddings = pickle.load(f)
         
-        # Load and preprocess pre-computed protein embeddings
-        with gzip.open('embeddings/esm2_t30_150M_UR50D.json.gz', 'r') as fin:
-            esm2 = json.loads(fin.read().decode('utf-8'))
+        # Load and preprocess pre-computed ESM protein embeddings
+        with gzip.open('embeddings/esm2_t30_150M_UR50D.json.gz', 'r') as f:
+            esm2 = json.loads(f.read().decode('utf-8'))
         self.protein_embeddings = {label[8:]:np.array(sample) for label, sample in zip(esm2['labels'],  esm2['samples'])}
             # keys:     task number (string) ex. '54'
             # values:   protein embedding for protein task (np.array of shape (640,))
+        
+        # Load and preprocess pre-computed VAE protein embeddings
+        with open('embeddings/vae_100_esm2_t30_150M_UR50D_embeddings.p', 'rb') as f:
+            vae_prot = pickle.load(f)
+        self.vae_protein_embeddings = {label[8:]:sample.cpu().detach().numpy() for label, sample in zip(vae_prot['labels'],  vae_prot['samples'])}
+            # keys:     task number (string) ex. '54'
+            # values:   protein embedding for protein task (np.array of shape (100,))
 
     def _sample(self):
         """
@@ -56,15 +63,17 @@ class DataGenerator(IterableDataset):
         smiles_embeddings_1 = np.stack(list(map(lambda s: self.smiles_embeddings[s], smiles_batch_1)))
         smiles_embeddings = np.stack([smiles_embeddings_0, smiles_embeddings_1], axis=1)
 
-        # Generate pretrained protein embedding
-        protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+1, 2, 1))
-            # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
-
         # Assign labels
         labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+1, axis=0)
 
         # Shuffle query set
         if self.repr == "concat":
+            protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+1, 2, 1))
+                # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
+            embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
+        elif self.repr == "concat_smiles_vaeprot":
+            protein_embedding = np.tile(self.vae_protein_embeddings[task.name], (self.k+1, 2, 1))
+                # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         else:  # default to "smiles_only"
             embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)
