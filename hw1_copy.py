@@ -27,15 +27,15 @@ def initialize_weights(model):
 
 
 class MANN(nn.Module):
-    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim):
+    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob):
         super(MANN, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
-        self.input_dim = input_dim 
+        self.input_dim = input_dim
+        self.dropout_prob = dropout_prob
 
-        self.layer1 = torch.nn.LSTM(
-            input_dim, hidden_dim, batch_first=True  
-        )
+        self.layer1 = torch.nn.LSTM(input_dim, hidden_dim, batch_first=True)
+        self.dropout = torch.nn.Dropout(dropout_prob)
         self.layer2 = torch.nn.LSTM(hidden_dim, num_classes, batch_first=True)
         initialize_weights(self.layer1)
         initialize_weights(self.layer2)
@@ -65,7 +65,7 @@ class MANN(nn.Module):
 
         # 3. Pass to LSTM layers
         output = self.layer1(input_images_and_labels.float())
-        predictions = self.layer2(output[0])[0]
+        predictions = self.layer2(self.dropout(output[0]))[0]
 
         # 4. Return predictions
         return predictions.reshape((B, K_1, N, N))
@@ -86,7 +86,7 @@ class MANN(nn.Module):
         #############################
         #### YOUR CODE GOES HERE ####
 
-        # TODO: This is wrong, apparantly.
+        # TODO: This is wrong, apparently.
         query_preds = preds[:, -1, :, :]
         query_labels = labels[:, -1, :, :]
         loss = F.cross_entropy(query_preds, query_labels)
@@ -112,13 +112,14 @@ def main(config):
     if torch.cuda.is_available():
         device = torch.device("cuda")
         wandb.init(project="meta_bindingdb", entity="davidekuo")
+        wandb.config.update(config)
     else:
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}"
+        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}"
+        f"_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}_Dropout{config.dropout}"
     )
-    wandb.config.update(config)
 
     # Create Data Generator
     train_iterable = DataGenerator(
@@ -153,7 +154,13 @@ def main(config):
     # smiles_embedding_dim = 767, protein_embedding_dim = 640
 
     # Create model
-    model = MANN(config.num_classes, config.num_shot + 1, config.hidden_dim, repr_to_input_dims[config.repr])
+    model = MANN(
+        config.num_classes,
+        config.num_shot + 1,
+        config.hidden_dim,
+        repr_to_input_dims[config.repr],
+        config.dropout
+    )
     model.to(device)
 
     # Create optimizer
@@ -173,8 +180,8 @@ def main(config):
         t2 = time.time()
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
-
-        wandb.log({"Loss/train": ls})
+        if device == torch.device("cuda"):
+            wandb.log({"Loss/train": ls})
 
         ## Evaluate
         if (step + 1) % config.eval_freq == 0:
@@ -189,7 +196,10 @@ def main(config):
                 tls.cpu().numpy(),
             )
             writer.add_scalar("Loss/test", tls, step)
-            wandb.log({"Loss/test": tls})
+
+            if device == torch.device("cuda"):
+                wandb.log({"Loss/test": tls})
+
             pred = torch.reshape(
                 pred,
                 [
@@ -206,13 +216,17 @@ def main(config):
             )
             print("Test Accuracy", acc)
             writer.add_scalar("Accuracy/test", acc, step)
-            wandb.log({"Accuracy/test": acc})
+
+            if device == torch.device("cuda"):
+                wandb.log({"Accuracy/test": acc})
 
             times = np.array(times)
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
-            wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
+            if device == torch.device("cuda"):
+                wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
+
             times = []
 
 if __name__ == "__main__":
@@ -229,4 +243,5 @@ if __name__ == "__main__":
     parser.add_argument("--image_caching", type=bool, default=True)
     parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "concat"
     parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
+    parser.add_argument("--dropout", type=float, default=0)
     main(parser.parse_args())
