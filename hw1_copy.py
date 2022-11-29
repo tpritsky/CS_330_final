@@ -150,8 +150,10 @@ def main(config):
         )
     )
 
-    repr_to_input_dims = {"smiles_only": config.num_classes + 767, "concat": config.num_classes + 767 + 640}
-    # smiles_embedding_dim = 767, protein_embedding_dim = 640
+    repr_to_input_dims = {"smiles_only": config.num_classes + 767, 
+                          "concat": config.num_classes + 767 + 640,
+                          "concat_smiles_vaeprot": config.num_classes + 767 + 100}
+    # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
 
     # Create model
     model = MANN(
@@ -248,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
-    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "concat"
+    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "concat", "concat_smiles_vaeprot", "vaesmiles_only"
     parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
     parser.add_argument("--dropout", type=float, default=0)
     main(parser.parse_args())
