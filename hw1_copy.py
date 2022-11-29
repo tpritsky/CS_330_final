@@ -13,6 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 from data_loader import DataGenerator
 from tqdm import tqdm
 
+import wandb
+
 def initialize_weights(model):
     if type(model) in [nn.Linear]:
         nn.init.xavier_uniform_(model.weight)
@@ -109,12 +111,14 @@ def main(config):
     np.random.seed(config.random_seed)
     if torch.cuda.is_available():
         device = torch.device("cuda")
+        wandb.init(project="meta_bindingdb", entity="davidekuo")
     else:
         device = torch.device("cpu")
 
     writer = SummaryWriter(
         f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}"
     )
+    wandb.config.update(config)
 
     # Create Data Generator
     train_iterable = DataGenerator(
@@ -170,6 +174,8 @@ def main(config):
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
 
+        wandb.log({"Loss/train": ls})
+
         ## Evaluate
         if (step + 1) % config.eval_freq == 0:
             print("*" * 5 + "Iter " + str(step + 1) + "*" * 5)
@@ -183,6 +189,7 @@ def main(config):
                 tls.cpu().numpy(),
             )
             writer.add_scalar("Loss/test", tls, step)
+            wandb.log({"Loss/test": tls})
             pred = torch.reshape(
                 pred,
                 [
@@ -199,13 +206,14 @@ def main(config):
             )
             print("Test Accuracy", acc)
             writer.add_scalar("Accuracy/test", acc, step)
+            wandb.log({"Accuracy/test": acc})
 
             times = np.array(times)
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
+            wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
             times = []
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
