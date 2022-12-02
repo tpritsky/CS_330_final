@@ -23,7 +23,7 @@ class DataGenerator(IterableDataset):
         self.repr = repr
 
         # Load pre-computed smiles embeddings
-        with open('data/smiles_to_embeddings_v2.pickle', 'rb') as f:
+        with open('data/smiles_to_embeddings.pickle', 'rb') as f:
             self.smiles_embeddings = pickle.load(f)
         
         # Load and preprocess pre-computed ESM protein embeddings
@@ -36,7 +36,7 @@ class DataGenerator(IterableDataset):
         # Load and preprocess pre-computed VAE protein embeddings
         with open('embeddings/vae_100_esm2_t30_150M_UR50D_embeddings.p', 'rb') as f:
             vae_prot = pickle.load(f)
-        self.vae_protein_embeddings = {label[8:]:sample.cpu().detach().numpy() for label, sample in zip(vae_prot['labels'],  vae_prot['samples'])}
+        self.vae_protein_embeddings = {label:sample for label, sample in zip(vae_prot['labels'],  vae_prot['samples'])}
             # keys:     task number (string) ex. '54'
             # values:   protein embedding for protein task (np.array of shape (100,))
 
