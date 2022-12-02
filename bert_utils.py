@@ -28,7 +28,7 @@ class SmilesBertModel(BertPreTrainedModel):
     def forward(
         self,
         input_images: torch.Tensor,
-        input_labels: torch.Tensor,
+        raw_input_labels: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor]:
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
@@ -36,7 +36,7 @@ class SmilesBertModel(BertPreTrainedModel):
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, (input_images.shape[0], input_images.shape[-1]))
 
         # 1. Zero out query set labels
-        input_labels = input_labels.clone()
+        input_labels = raw_input_labels.clone()
         input_labels[:, -1, :, :] = 0
 
         # 2. Concatenate labels to images
@@ -80,14 +80,17 @@ class SmilesBertModel(BertPreTrainedModel):
             ],
         )
         query_embeddings = sequence_output[:, -1, :, :]
-        query_labels = input_labels[:, -1, :, :]
+        query_labels = raw_input_labels[:, -1, :, :]
 
         pred = self.linear(query_embeddings)
+        pred = F.sigmoid(pred)
 
-        loss_fn = nn.BCEWithLogitsLoss()
-        loss = loss_fn(pred, query_labels)
+        # loss_fn = nn.BCEWithLogitsLoss()
+        loss = F.binary_cross_entropy(pred, query_labels)
 
         # import pdb
         # pdb.set_trace()
 
-        return loss
+        # print(torch.mean(pred))
+
+        return loss, pred
