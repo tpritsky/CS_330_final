@@ -34,7 +34,7 @@ def main(config):
 
     # Create Data Generator
     train_iterable = DataGenerator(
-        data_json_path=f'data/val.json',
+        data_json_path=f'data/train.json',
         k=config.num_shot,
         repr=config.repr,
     )
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     parser.add_argument("--meta_batch_size", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--random_seed", type=int, default=123)
-    parser.add_argument("--learning_rate", type=float, default=1e-5)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "smiles_only", "concat", "vaesmiles_only"
     parser.add_argument("--dataset", type=str, default="full")  # alternatively "full"
