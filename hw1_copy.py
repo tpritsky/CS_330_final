@@ -111,7 +111,7 @@ def main(config):
     np.random.seed(config.random_seed)
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        # wandb.init(project="meta_bindingdb", entity="davidekuo")
+        # wandb.init(project="fs_bindingdb", entity="davidekuo")
         # wandb.config.update(config)
     else:
         device = torch.device("cpu")
@@ -200,8 +200,6 @@ def main(config):
             )
             writer.add_scalar("Loss/test", tls, step)
 
-            # if device == torch.device("cuda"):
-            #     wandb.log({"Loss/test": tls})
 
             pred = torch.reshape(
                 pred,
@@ -225,14 +223,13 @@ def main(config):
                 print("Saved model.")
                 best_val_acc = acc
 
-            # if device == torch.device("cuda"):
-            #     wandb.log({"Accuracy/test": acc})
-
             times = np.array(times)
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
             # if device == torch.device("cuda"):
+            #     wandb.log({"Loss/test": tls})
+            #     wandb.log({"Accuracy/test": acc})
             #     wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
 
             times = []
@@ -245,12 +242,12 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--eval_freq", type=int, default=500)
     parser.add_argument("--meta_batch_size", type=int, default=128)
-    parser.add_argument("--hidden_dim", type=int, default=256)
+    parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--random_seed", type=int, default=123)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
-    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "concat", "concat_smiles_vaeprot", "vaesmiles_only"
+    parser.add_argument("--repr", type=str, default="concat_smiles_vaeprot")  # alternatively "smiles_only", "concat", "vaesmiles_only"
     parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
-    parser.add_argument("--dropout", type=float, default=0)
+    parser.add_argument("--dropout", type=float, default=0.35)
     main(parser.parse_args())
