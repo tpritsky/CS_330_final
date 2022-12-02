@@ -75,7 +75,7 @@ class DataGenerator(IterableDataset):
             protein_embedding = np.tile(self.vae_protein_embeddings[task.name], (self.k+1, 2, 1))
                 # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
-        else:  # default to "smiles_only"
+        else:  # "smiles_only"
             embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)
         np.random.shuffle(embeddings_and_labels[-1])
         embeddings = embeddings_and_labels[..., : -2]
