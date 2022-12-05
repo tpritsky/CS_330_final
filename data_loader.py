@@ -70,8 +70,13 @@ class DataGenerator(IterableDataset):
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)            
         else:  # "smiles_only"
             embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)  # (K+Q, N, embedding_dim+N)
-        # np.random.shuffle(embeddings_and_labels[-self.q:])  # shuffle query set
-        np.random.shuffle(embeddings_and_labels[-1])  # shuffle query set
+        
+        query_embeddings_labels = embeddings_and_labels[-self.q:] # (Q, N, embed_dim), view of embeddings_and_labels[-self.q:]
+        for q in query_embeddings_labels:
+            np.random.shuffle(q) # shuffles axis 0 corresponding to N
+            # shuffle along axis for N independently for each query shot (contains 1 example for each of N classes)
+            # do this shuffle order in which classes are fed in to prevent memorization
+
         embeddings = embeddings_and_labels[..., :-2]  # N=2, embeddings ~ (K+Q, N, embedding_dim)
         labels = embeddings_and_labels[..., -2:]  # N=2, labels ~ (K+Q, N, N)
 
