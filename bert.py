@@ -28,6 +28,8 @@ class SmilesBertModel(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
         if self.repr == "concat_after":
             self.linear = nn.Linear(config.hidden_size + 100, 2)
+        elif self.repr == "concat_after_full":
+            self.linear = nn.Linear(config.hidden_size + 640, 2)
         else:
             self.linear = nn.Linear(config.hidden_size, 2)
 
@@ -50,6 +52,9 @@ class SmilesBertModel(BertPreTrainedModel):
         if self.repr == "concat_after":
             protein_embeds = input_images[:, :, :, -100:].float()
             input_images = input_images[:, :, :, :-100]
+        if self.repr == "concat_after_full":
+            protein_embeds = input_images[:, :, :, -640:].float()
+            input_images = input_images[:, :, :, :-640]
 
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
         B, K_1, N, D = input_images_and_labels.shape
@@ -72,6 +77,9 @@ class SmilesBertModel(BertPreTrainedModel):
         if self.repr == "concat_after":
             protein_embeds = protein_embeds.reshape((B, -1, 100))
             sequence_output = torch.concat((sequence_output, protein_embeds), axis=-1)  
+        if self.repr == "concat_after_full":
+            protein_embeds = protein_embeds.reshape((B, -1, 640))
+            sequence_output = torch.concat((sequence_output, protein_embeds), axis=-1)
 
         sequence_output = torch.reshape(sequence_output,[self.batch_size, self.k + 1, 2, -1])
         query_embeddings = sequence_output[:, -1, :, :]
@@ -130,6 +138,7 @@ def main(config):
     # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
     repr_to_input_dims = {"smiles_only": config.num_classes + 767,
                           "concat_after": config.num_classes + 767,
+                          "concat_after_full": config.num_classes + 767,
                           "concat": config.num_classes + 767 + 640,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
 

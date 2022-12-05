@@ -33,6 +33,8 @@ class BlackBoxLSTM(nn.Module):
         self.dropout = torch.nn.Dropout(dropout_prob)
         if repr == "concat_after":
             hidden_dim += 100
+        if repr == "concat_after_full":
+            hidden_dim += 640
         self.layer2 = torch.nn.LSTM(hidden_dim, num_classes, batch_first=True)
         initialize_weights(self.layer1)
         initialize_weights(self.layer2)
@@ -44,6 +46,9 @@ class BlackBoxLSTM(nn.Module):
         if self.repr == "concat_after":
             protein_embeds = input_images[:, :, :, -100:].float()
             input_images = input_images[:, :, :, :-100]
+        if self.repr == "concat_after_full":
+            protein_embeds = input_images[:, :, :, -640:].float()
+            input_images = input_images[:, :, :, :-640]
 
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
         B, K_1, N, D = input_images_and_labels.shape
@@ -52,7 +57,10 @@ class BlackBoxLSTM(nn.Module):
         output = self.layer1(input_images_and_labels.float())
         if self.repr == "concat_after":
             protein_embeds = protein_embeds.reshape((B, -1, 100))
-            output = torch.concat((output[0], protein_embeds), axis=-1)  
+            output = torch.concat((output[0], protein_embeds), axis=-1)
+        elif self.repr == "concat_after_full":
+            protein_embeds = protein_embeds.reshape((B, -1, 640))
+            output = torch.concat((output[0], protein_embeds), axis=-1)
         else:
             output = output[0]
         predictions = self.layer2(self.dropout(output))[0]
@@ -123,6 +131,7 @@ def main(config):
     repr_to_input_dims = {"smiles_only": config.num_classes + 767, 
                           "concat_after": config.num_classes + 767,
                           "concat": config.num_classes + 767 + 640,
+                          "concat_after_full": config.num_classes + 767,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
 
     # Create model
