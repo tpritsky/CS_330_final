@@ -143,7 +143,11 @@ def main(config):
             print("*" * 5 + "Iter " + str(step + 1) + "*" * 5)
             i, l = next(test_loader)
             i, l = i.to(device), l.to(device)
-            pred, tls = train_step(i, l, model, optim, eval=True)
+            pred_logits, tls = train_step(i, l, model, optim, eval=True)
+            # pred_logits ~ (B, K+1, N, N)
+            # model sees K support examples for each of N classes and predicts on 1 query example for each of N classes (all shuffled ofc) -> (_, K+1, N, _)
+            # here, LSTM outputs logits for each of N classes for each of the (K+1) * N support & query examples -> (_, K+1, N, N)
+            # batch to leverage parallelism -> (B, K+1, N, N)
             print(
                 "Train Loss:",
                 ls.cpu().numpy(),
@@ -152,23 +156,31 @@ def main(config):
             )
             writer.add_scalar("Loss/test", tls, step)
 
-
-            pred = torch.reshape(
-                pred,
+            pred_logits = torch.reshape(
+                pred_logits,
                 [
                     -1,
                     config.num_shot + 1,
                     config.num_classes,
                     config.num_classes,
                 ],
-            )
-            pred = torch.argmax(pred[:, -1, :, :], axis=2)
-            l = torch.argmax(l[:, -1, :, :], axis=2)
-            acc = pred.eq(l).sum().item() / (
+            )  # no change, already in correct shape
+            pred_class = torch.argmax(pred_logits[:, -1, :, :], axis=2)
+            # pred_logits[:, -1, :, :] selects logits for query example (not K support examples) over entire batch, shape ~ (B, N, N)
+            # torch.argmax(..., axis=2) selects predicted class (with largest logit) for the N query examples (1 for each class), shape ~ (B, N)
+            true_class = torch.argmax(l[:, -1, :, :], axis=2)  # selects ground-truth class for the N query examples
+            acc = pred_class.eq(true_class).sum().item() / (
                 config.meta_batch_size * config.num_classes
-            )
+            )  # sums the number of matches between predicted and ground-truth class, divided by # of query examples in batch (B * N)
             print("Val Accuracy", acc)
             writer.add_scalar("Accuracy/val", acc, step)
+
+            # Plot ROC curve
+            # fpr, tpr, thresholds = torchmetrics.functional.classification.binary_roc(preds=pred_logits[:, -1, :, :], target=l[:, -1, :, :])
+            # auc = torchmetrics.functional.classification.binary_auroc(preds=pred_logits[:, -1, :, :], target=l[:, -1, :, :]).item()
+            # roc_curve = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
+            # roc_curve.plot()
+            # plt.show()
 
             if acc > best_val_acc:
                 torch.save(model, f'model/{config.save}.pt')
@@ -185,17 +197,19 @@ def main(config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_classes", type=int, default=2)
-    parser.add_argument("--num_shot", type=int, default=20)
+    parser.add_argument("--num_shot", type=int, default=3)  # 10
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--eval_freq", type=int, default=500)
+    parser.add_argument("--eval_freq", type=int, default=10)  # 500
     parser.add_argument("--meta_batch_size", type=int, default=128)
     parser.add_argument("--hidden_dim", type=int, default=128)
     parser.add_argument("--random_seed", type=int, default=123)
     parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
-    parser.add_argument("--repr", type=str, default="concat_smiles_vaeprot")  # alternatively "smiles_only", "concat", "vaesmiles_only"
-    parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
+    parser.add_argument("--repr", type=str, default="smiles_only")
+    # "smiles_only", "concat", "vaesmiles_only", "concat_smiles_vaeprot"
+    parser.add_argument("--dataset", type=str, default="dev")
+    # "dev", "full"
     parser.add_argument("--dropout", type=float, default=0.35)
     parser.add_argument("--save", type=str)
     main(parser.parse_args())
