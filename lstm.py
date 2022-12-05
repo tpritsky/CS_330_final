@@ -21,7 +21,7 @@ def initialize_weights(model):
 
 
 class BlackBoxLSTM(nn.Module):
-    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob):
+    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob, repr):
         super(BlackBoxLSTM, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
@@ -40,18 +40,23 @@ class BlackBoxLSTM(nn.Module):
     def forward(self, input_images, input_labels):
         input_labels = input_labels.clone()
         input_labels[:, -1, :, :] = 0
+
+        if self.repr == "concat_after":
+            protein_embeds = input_images[:, :, :, -100:].float()
+            input_images = input_images[:, :, :, :-100]
+
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
         B, K_1, N, D = input_images_and_labels.shape
         input_images_and_labels = input_images_and_labels.reshape((B, -1, D))
-        if self.repr == "concat_after":
-            protein_embeds = input_images_and_labels[:, :, -100:].float()
-            input_images_and_labels = input_images_and_labels[:, :, :-100]
+
         output = self.layer1(input_images_and_labels.float())
         if self.repr == "concat_after":
+            protein_embeds = protein_embeds.reshape((B, -1, 100))
             output = torch.concat((output[0], protein_embeds), axis=-1)  
         else:
             output = output[0]
         predictions = self.layer2(self.dropout(output))[0]
+        
         return predictions.reshape((B, K_1, N, N))
 
     def loss_function(self, preds, labels):

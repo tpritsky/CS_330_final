@@ -60,17 +60,18 @@ class DataGenerator(IterableDataset):
         labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+self.q, axis=0)  # (K+Q, N, N)
 
         # Shuffle query set
-        if self.repr == "concat":
+        if self.repr in ("concat", "concat_after_full"):
             protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+self.q, 2, 1))
                 # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
-        elif self.repr == "concat_smiles_vaeprot" or self.repr == "concat_after":
+        elif self.repr in ("concat_smiles_vaeprot", "concat_after"):
             protein_embedding = np.tile(self.vae_protein_embeddings[int(task.name)], (self.k+self.q, 2, 1))
                 # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)            
         else:  # "smiles_only"
             embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)  # (K+Q, N, embedding_dim+N)
-        np.random.shuffle(embeddings_and_labels[-self.q:])  # shuffle query set
+        # np.random.shuffle(embeddings_and_labels[-self.q:])  # shuffle query set
+        np.random.shuffle(embeddings_and_labels[-1])  # shuffle query set
         embeddings = embeddings_and_labels[..., :-2]  # N=2, embeddings ~ (K+Q, N, embedding_dim)
         labels = embeddings_and_labels[..., -2:]  # N=2, labels ~ (K+Q, N, N)
 

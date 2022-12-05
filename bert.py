@@ -23,9 +23,13 @@ class SmilesBertModel(BertPreTrainedModel):
         self.config = config
         self.k = config.k
         self.batch_size = config.batch_size
+        self.repr = config.repr
 
         self.encoder = BertEncoder(config)
-        self.linear = nn.Linear(config.hidden_size, 2)
+        if self.repr == "concat_after":
+            self.linear = nn.Linear(config.hidden_size + 100, 2)
+        else:
+            self.linear = nn.Linear(config.hidden_size, 2)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -42,6 +46,11 @@ class SmilesBertModel(BertPreTrainedModel):
 
         input_labels = raw_input_labels.clone()
         input_labels[:, -1, :, :] = 0
+
+        if self.repr == "concat_after":
+            protein_embeds = input_images[:, :, :, -100:].float()
+            input_images = input_images[:, :, :, :-100]
+
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
         B, K_1, N, D = input_images_and_labels.shape
         input_images_and_labels = input_images_and_labels.reshape((B, -1, D))
@@ -59,6 +68,10 @@ class SmilesBertModel(BertPreTrainedModel):
             return_dict=False,
         )
         sequence_output = encoder_outputs[0]
+
+        if self.repr == "concat_after":
+            protein_embeds = protein_embeds.reshape((B, -1, 100))
+            sequence_output = torch.concat((sequence_output, protein_embeds), axis=-1)  
 
         sequence_output = torch.reshape(sequence_output,[self.batch_size, self.k + 1, 2, -1])
         query_embeddings = sequence_output[:, -1, :, :]
@@ -116,6 +129,7 @@ def main(config):
 
     # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
     repr_to_input_dims = {"smiles_only": config.num_classes + 767,
+                          "concat_after": config.num_classes + 767,
                           "concat": config.num_classes + 767 + 640,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
 
@@ -131,6 +145,7 @@ def main(config):
         hidden_dropout_prob = 0.3,
         k = config.num_shot,
         batch_size = config.meta_batch_size,
+        repr = config.repr
     )
 
     # Create model
@@ -212,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument("--random_seed", type=int, default=123)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--train_steps", type=int, default=25000)
-    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "smiles_only", "concat", "vaesmiles_only"
+    parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "smiles_only", "concat", "vaesmiles_only", "concat_after", "concat_after_full"
     parser.add_argument("--dataset", type=str, default="full")  # alternatively "full"
     parser.add_argument("--dropout", type=float, default=0.35)
     parser.add_argument("--save", type=str)
