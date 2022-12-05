@@ -20,9 +20,9 @@ def initialize_weights(model):
         nn.init.zeros_(model.bias_ih_l0)
 
 
-class BlacBoxLSTM(nn.Module):
+class BlackBoxLSTM(nn.Module):
     def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob):
-        super(BlacBoxLSTM, self).__init__()
+        super(BlackBoxLSTM, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
         self.input_dim = input_dim
@@ -110,7 +110,7 @@ def main(config):
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
 
     # Create model
-    model = BlacBoxLSTM(
+    model = BlackBoxLSTM(
         config.num_classes,
         config.num_shot + 1,
         config.hidden_dim,
@@ -174,13 +174,6 @@ def main(config):
             )  # sums the number of matches between predicted and ground-truth class, divided by # of query examples in batch (B * N)
             print("Val Accuracy", acc)
             writer.add_scalar("Accuracy/val", acc, step)
-
-            # Plot ROC curve
-            # fpr, tpr, thresholds = torchmetrics.functional.classification.binary_roc(preds=pred_logits[:, -1, :, :], target=l[:, -1, :, :])
-            # auc = torchmetrics.functional.classification.binary_auroc(preds=pred_logits[:, -1, :, :], target=l[:, -1, :, :]).item()
-            # roc_curve = RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=auc)
-            # roc_curve.plot()
-            # plt.show()
 
             if acc > best_val_acc:
                 torch.save(model, f'model/{config.save}.pt')
