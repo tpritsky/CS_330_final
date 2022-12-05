@@ -12,9 +12,6 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 
 class DataGenerator(IterableDataset):
-    """
-    Class for generating batches of target protein affinity data.
-    """
 
     def __init__(self, data_json_path, k, repr):
         self.df = pd.DataFrame(json.load(open(data_json_path)))
@@ -41,11 +38,6 @@ class DataGenerator(IterableDataset):
             # values:   protein embedding for protein task (np.array of shape (100,))
 
     def _sample(self):
-        """
-        Returns a tuple containing:
-            1. Batch of SMILES embeddings with shape (K+1, 2, 767)
-            2. Batch of one-hot binary labels with shape (K+1, 2, 2)
-        """
         # Find protein target with >= K positive and negative examples
         task = self.df.iloc[np.random.randint(self.size)]
         while (len(task['smiles_0']) < self.k+1) or (len(task['smiles_1']) < self.k+1):
@@ -72,7 +64,7 @@ class DataGenerator(IterableDataset):
                 # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         elif self.repr == "concat_smiles_vaeprot":
-            protein_embedding = np.tile(self.vae_protein_embeddings[task.name], (self.k+1, 2, 1))
+            protein_embedding = np.tile(self.vae_protein_embeddings[int(task.name)], (self.k+1, 2, 1))
                 # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         else:  # "smiles_only"

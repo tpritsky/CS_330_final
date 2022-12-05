@@ -1,20 +1,76 @@
 import argparse
 import random
-import json
-
+import time
 import numpy as np
-import pandas as pd
-
 import torch
-from torch import nn, Tensor
-import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-
 from data_loader import DataGenerator
 from tqdm import tqdm
-
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Dict, Union, Tuple
 from transformers import BertConfig
-from bert_utils import SmilesBertModel
+from transformers.models.bert.modeling_bert import (
+    BertEncoder,
+    BertPreTrainedModel,
+)
+
+
+class SmilesBertModel(BertPreTrainedModel):
+    """Multi-headed BERT-based model for SMILES sequences."""
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+        self.k = config.k
+        self.batch_size = config.batch_size
+
+        self.encoder = BertEncoder(config)
+        self.linear = nn.Linear(config.hidden_size, 2)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def forward(
+        self,
+        input_images: torch.Tensor,
+        raw_input_labels: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> Tuple[torch.Tensor]:
+        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
+        # ourselves in which case we just need to make it broadcastable to all heads.
+        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, (input_images.shape[0], input_images.shape[-1]))
+
+        input_labels = raw_input_labels.clone()
+        input_labels[:, -1, :, :] = 0
+        input_images_and_labels = torch.cat((input_images, input_labels), -1)
+        B, K_1, N, D = input_images_and_labels.shape
+        input_images_and_labels = input_images_and_labels.reshape((B, -1, D))
+
+        encoder_outputs = self.encoder(
+            input_images_and_labels,  # (batch, seq, dim)
+            attention_mask=extended_attention_mask,
+            head_mask=None,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            past_key_values=None,
+            use_cache=self.config.use_cache,
+            output_attentions=False,
+            output_hidden_states=False,
+            return_dict=False,
+        )
+        sequence_output = encoder_outputs[0]
+
+        sequence_output = torch.reshape(sequence_output,[self.batch_size, self.k + 1, 2, -1])
+        query_embeddings = sequence_output[:, -1, :, :]
+        query_labels = raw_input_labels[:, -1, :, :]
+
+        pred = self.linear(query_embeddings)
+        pred = F.sigmoid(pred)
+
+        loss = F.binary_cross_entropy(pred, query_labels)
+
+        return loss, pred
+
 
 def main(config):
     print(config)
@@ -22,8 +78,6 @@ def main(config):
     np.random.seed(config.random_seed)
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        # wandb.init(project="fs_bindingdb", entity="davidekuo")
-        # wandb.config.update(config)
     else:
         device = torch.device("cpu")
 
@@ -32,7 +86,6 @@ def main(config):
         f"_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}_Dropout{config.dropout}"
     )
 
-    # Create Data Generator
     train_iterable = DataGenerator(
         data_json_path=f'data/train.json',
         k=config.num_shot,
@@ -61,12 +114,12 @@ def main(config):
         )
     )
 
-    repr_to_input_dims = {"smiles_only": config.num_classes + 767, 
+    # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
+    repr_to_input_dims = {"smiles_only": config.num_classes + 767,
                           "concat": config.num_classes + 767 + 640,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
-    # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
 
-    # Create model
+    # Create BERT model configuration
     model_config = BertConfig(
         max_position_embeddings = (config.num_shot+1)*config.num_classes,
         hidden_size = repr_to_input_dims[config.repr],
@@ -86,7 +139,6 @@ def main(config):
 
     # Create optimizer
     optim = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    import time
 
     times = []
     best_val_acc = 0
@@ -98,7 +150,6 @@ def main(config):
         t1 = time.time()
 
         ## Train
-        # _, ls = train_step(i, l, model, optim)
         attention_mask = torch.ones((config.meta_batch_size, (config.num_shot+1)*config.num_classes))
         attention_mask = attention_mask.to(device)
         ls, _ = model(i.float(), l.float(), attention_mask)
@@ -109,8 +160,6 @@ def main(config):
         t2 = time.time()
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
-        # if device == torch.device("cuda"):
-        #     wandb.log({"Loss/train": ls})
 
         ## Evaluate
         if (step + 1) % config.eval_freq == 0:
@@ -127,10 +176,8 @@ def main(config):
                 tls.detach().cpu().numpy(),
             )
             writer.add_scalar("Loss/test", tls, step)
-
-            # pred = F.sigmoid(pred) # (batch, n, n)
             
-            pred = torch.argmax(pred, axis=1)  # could be error prone
+            pred = torch.argmax(pred, axis=1)
 
             l = torch.argmax(l[:, -1, :, :], axis=1)
 
@@ -141,20 +188,14 @@ def main(config):
             writer.add_scalar("Accuracy/val", acc, step)
 
             if acc > best_val_acc:
-                torch.save(model, 'model/bert_model.pt')
+                torch.save(model, f'model/{config.save}.pt')
                 print("Saved model.")
                 best_val_acc = acc
-
 
             times = np.array(times)
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
-            # if device == torch.device("cuda"):
-            #     wandb.log({"Loss/test": tls})
-            #     wandb.log({"Accuracy/test": acc})
-            #     wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
-
             times = []
 
             model.train()
@@ -174,4 +215,5 @@ if __name__ == "__main__":
     parser.add_argument("--repr", type=str, default="smiles_only")  # alternatively "smiles_only", "concat", "vaesmiles_only"
     parser.add_argument("--dataset", type=str, default="full")  # alternatively "full"
     parser.add_argument("--dropout", type=float, default=0.35)
+    parser.add_argument("--save", type=str)
     main(parser.parse_args())

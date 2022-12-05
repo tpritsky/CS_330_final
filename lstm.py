@@ -1,19 +1,13 @@
 import argparse
 import random
-import json
-
 import numpy as np
-import pandas as pd
-
 import torch
-from torch import nn, Tensor
+from torch import nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-
 from data_loader import DataGenerator
 from tqdm import tqdm
 
-# import wandb
 
 def initialize_weights(model):
     if type(model) in [nn.Linear]:
@@ -26,9 +20,9 @@ def initialize_weights(model):
         nn.init.zeros_(model.bias_ih_l0)
 
 
-class MANN(nn.Module):
+class BlacBoxLSTM(nn.Module):
     def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob):
-        super(MANN, self).__init__()
+        super(BlacBoxLSTM, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
         self.input_dim = input_dim
@@ -41,58 +35,20 @@ class MANN(nn.Module):
         initialize_weights(self.layer2)
 
     def forward(self, input_images, input_labels):
-        """
-        MANN
-        Args:
-            input_images: [B, K+1, N, 784] flattened images
-            labels: [B, K+1, N, N] ground truth labels
-        Returns:
-            [B, K+1, N, N] predictions
-        """
-        #############################
-        #### YOUR CODE GOES HERE ####
-
-        # 1. Zero out query set labels
         input_labels = input_labels.clone()
         input_labels[:, -1, :, :] = 0
-
-        # 2. Concatenate labels to images
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
-
-        # 3. Reshape
         B, K_1, N, D = input_images_and_labels.shape
         input_images_and_labels = input_images_and_labels.reshape((B, -1, D))
-
-        # 3. Pass to LSTM layers
         output = self.layer1(input_images_and_labels.float())
         predictions = self.layer2(self.dropout(output[0]))[0]
-
-        # 4. Return predictions
         return predictions.reshape((B, K_1, N, N))
 
-        #############################
-
     def loss_function(self, preds, labels):
-        """
-        Computes MANN loss
-        Args:
-            preds: [B, K+1, N, N] network output
-            labels: [B, K+1, N, N] labels
-        Returns:
-            scalar loss
-        Note:
-            Loss should only be calculated on the N test images
-        """
-        #############################
-        #### YOUR CODE GOES HERE ####
-
-        # TODO: This is wrong, apparently.
         query_preds = preds[:, -1, :, :]
         query_labels = labels[:, -1, :, :]
         loss = F.cross_entropy(query_preds, query_labels)
         return loss
-
-        #############################
 
 
 def train_step(images, labels, model, optim, eval=False):
@@ -111,8 +67,6 @@ def main(config):
     np.random.seed(config.random_seed)
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        # wandb.init(project="fs_bindingdb", entity="davidekuo")
-        # wandb.config.update(config)
     else:
         device = torch.device("cpu")
 
@@ -150,13 +104,13 @@ def main(config):
         )
     )
 
+    # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
     repr_to_input_dims = {"smiles_only": config.num_classes + 767, 
                           "concat": config.num_classes + 767 + 640,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
-    # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
 
     # Create model
-    model = MANN(
+    model = BlacBoxLSTM(
         config.num_classes,
         config.num_shot + 1,
         config.hidden_dim,
@@ -183,8 +137,6 @@ def main(config):
         t2 = time.time()
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
-        # if device == torch.device("cuda"):
-        #     wandb.log({"Loss/train": ls})
 
         ## Evaluate
         if (step + 1) % config.eval_freq == 0:
@@ -219,7 +171,7 @@ def main(config):
             writer.add_scalar("Accuracy/val", acc, step)
 
             if acc > best_val_acc:
-                torch.save(model, 'model/model.pt')
+                torch.save(model, f'model/{config.save}.pt')
                 print("Saved model.")
                 best_val_acc = acc
 
@@ -227,11 +179,6 @@ def main(config):
             print(
                 f"Sample time {times[:, 0].mean()} Train time {times[:, 1].mean()}"
             )
-            # if device == torch.device("cuda"):
-            #     wandb.log({"Loss/test": tls})
-            #     wandb.log({"Accuracy/test": acc})
-            #     wandb.log({"Sample time": times[:, 0].mean(), "Train time": times[:, 1].mean()})
-
             times = []
 
 
@@ -250,4 +197,5 @@ if __name__ == "__main__":
     parser.add_argument("--repr", type=str, default="concat_smiles_vaeprot")  # alternatively "smiles_only", "concat", "vaesmiles_only"
     parser.add_argument("--dataset", type=str, default="dev")  # alternatively "full"
     parser.add_argument("--dropout", type=float, default=0.35)
+    parser.add_argument("--save", type=str)
     main(parser.parse_args())
