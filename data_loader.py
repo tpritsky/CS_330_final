@@ -13,10 +13,11 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 class DataGenerator(IterableDataset):
 
-    def __init__(self, data_json_path, k, repr):
+    def __init__(self, data_json_path, k, repr, q=1):
         self.df = pd.DataFrame(json.load(open(data_json_path)))
         self.size = self.df.shape[0]
-        self.k = k
+        self.k = k  # number of support examples per class in a task
+        self.q = q  # number of query examples per class in a task - added for protonet
         self.repr = repr
 
         # Load pre-computed smiles embeddings
@@ -40,40 +41,40 @@ class DataGenerator(IterableDataset):
     def _sample(self):
         # Find protein target with >= K positive and negative examples
         task = self.df.iloc[np.random.randint(self.size)]
-        while (len(task['smiles_0']) < self.k+1) or (len(task['smiles_1']) < self.k+1):
+        while (len(task['smiles_0']) < self.k+self.q) or (len(task['smiles_1']) < self.k+self.q):
             # Sample another random protein target
             task = self.df.iloc[np.random.randint(self.size)]
 
-        # Sample K+1 positive and negative examples
-        indices_0 = np.random.choice(len(task['smiles_0']), self.k+1, replace=False)
-        indices_1 = np.random.choice(len(task['smiles_1']), self.k+1, replace=False)
+        # Sample K+Q positive and negative examples
+        indices_0 = np.random.choice(len(task['smiles_0']), self.k+self.q, replace=False)
+        indices_1 = np.random.choice(len(task['smiles_1']), self.k+self.q, replace=False)
         smiles_batch_0 = [task['smiles_0'][i][0] for i in indices_0]
         smiles_batch_1 = [task['smiles_1'][i][0] for i in indices_1]
 
         # Generate pretrained SMILES embeddings
         smiles_embeddings_0 = np.stack(list(map(lambda s: self.smiles_embeddings[s], smiles_batch_0)))
         smiles_embeddings_1 = np.stack(list(map(lambda s: self.smiles_embeddings[s], smiles_batch_1)))
-        smiles_embeddings = np.stack([smiles_embeddings_0, smiles_embeddings_1], axis=1)
+        smiles_embeddings = np.stack([smiles_embeddings_0, smiles_embeddings_1], axis=1)  # (K+Q, N, embedding_dim)
 
         # Assign labels
-        labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+1, axis=0)
+        labels = np.repeat(np.eye(2, 2)[None, :, :], self.k+self.q, axis=0)  # (K+Q, N, N)
 
         # Shuffle query set
         if self.repr == "concat":
-            protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+1, 2, 1))
-                # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
+            protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+self.q, 2, 1))
+                # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         elif self.repr == "concat_smiles_vaeprot":
-            protein_embedding = np.tile(self.vae_protein_embeddings[int(task.name)], (self.k+1, 2, 1))
-                # tile to get shape (self.k+1, 2, prot_embed_dim) for concatentation
+            protein_embedding = np.tile(self.vae_protein_embeddings[int(task.name)], (self.k+self.q, 2, 1))
+                # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
         else:  # "smiles_only"
-            embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)
-        np.random.shuffle(embeddings_and_labels[-1])
-        embeddings = embeddings_and_labels[..., : -2]
-        labels = embeddings_and_labels[..., -2 :]
+            embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)  # (K+Q, N, embedding_dim+N)
+        np.random.shuffle(embeddings_and_labels[-self.q:])  # shuffle query set
+        embeddings = embeddings_and_labels[..., :-2]  # N=2, embeddings ~ (K+Q, N, embedding_dim)
+        labels = embeddings_and_labels[..., -2:]  # N=2, labels ~ (K+Q, N, N)
 
-        return (embeddings, labels)
+        return embeddings, labels
 
     def __iter__(self):
         while True:
