@@ -21,15 +21,18 @@ def initialize_weights(model):
 
 
 class BlacBoxLSTM(nn.Module):
-    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob):
+    def __init__(self, num_classes, samples_per_class, hidden_dim, input_dim, dropout_prob, repr):
         super(BlacBoxLSTM, self).__init__()
         self.num_classes = num_classes
         self.samples_per_class = samples_per_class
         self.input_dim = input_dim
         self.dropout_prob = dropout_prob
+        self.repr = repr
 
         self.layer1 = torch.nn.LSTM(input_dim, hidden_dim, batch_first=True)
         self.dropout = torch.nn.Dropout(dropout_prob)
+        if repr == "concat_after":
+            hidden_dim += 100
         self.layer2 = torch.nn.LSTM(hidden_dim, num_classes, batch_first=True)
         initialize_weights(self.layer1)
         initialize_weights(self.layer2)
@@ -40,8 +43,15 @@ class BlacBoxLSTM(nn.Module):
         input_images_and_labels = torch.cat((input_images, input_labels), -1)
         B, K_1, N, D = input_images_and_labels.shape
         input_images_and_labels = input_images_and_labels.reshape((B, -1, D))
+        if self.repr == "concat_after":
+            protein_embeds = input_images_and_labels[:, :, -100:].float()
+            input_images_and_labels = input_images_and_labels[:, :, :-100]
         output = self.layer1(input_images_and_labels.float())
-        predictions = self.layer2(self.dropout(output[0]))[0]
+        if self.repr == "concat_after":
+            output = torch.concat((output[0], protein_embeds), axis=-1)  
+        else:
+            output = output[0]
+        predictions = self.layer2(self.dropout(output))[0]
         return predictions.reshape((B, K_1, N, N))
 
     def loss_function(self, preds, labels):
@@ -106,6 +116,7 @@ def main(config):
 
     # smiles_embedding_dim = 767, protein_embedding_dim = 640, vae_protein_embedding_dim = 100
     repr_to_input_dims = {"smiles_only": config.num_classes + 767, 
+                          "concat_after": config.num_classes + 767,
                           "concat": config.num_classes + 767 + 640,
                           "concat_smiles_vaeprot": config.num_classes + 767 + 100}
 
@@ -115,7 +126,8 @@ def main(config):
         config.num_shot + 1,
         config.hidden_dim,
         repr_to_input_dims[config.repr],
-        config.dropout
+        config.dropout,
+        config.repr,
     )
     model.to(device)
 
@@ -207,7 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_steps", type=int, default=25000)
     parser.add_argument("--image_caching", type=bool, default=True)
     parser.add_argument("--repr", type=str, default="smiles_only")
-    # "smiles_only", "concat", "vaesmiles_only", "concat_smiles_vaeprot"
+    # "smiles_only", "concat", "vaesmiles_only", "concat_smiles_vaeprot", "concat_after"
     parser.add_argument("--dataset", type=str, default="dev")
     # "dev", "full"
     parser.add_argument("--dropout", type=float, default=0.35)

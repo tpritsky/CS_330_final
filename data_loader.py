@@ -64,10 +64,10 @@ class DataGenerator(IterableDataset):
             protein_embedding = np.tile(self.protein_embeddings[task.name], (self.k+self.q, 2, 1))
                 # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
             embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
-        elif self.repr == "concat_smiles_vaeprot":
+        elif self.repr == "concat_smiles_vaeprot" or self.repr == "concat_after":
             protein_embedding = np.tile(self.vae_protein_embeddings[int(task.name)], (self.k+self.q, 2, 1))
                 # tile to get shape (self.k+self.q, 2, prot_embed_dim) for concatentation
-            embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)
+            embeddings_and_labels = np.concatenate((smiles_embeddings, protein_embedding, labels), axis=-1)            
         else:  # "smiles_only"
             embeddings_and_labels = np.concatenate((smiles_embeddings, labels), axis=-1)  # (K+Q, N, embedding_dim+N)
         np.random.shuffle(embeddings_and_labels[-self.q:])  # shuffle query set
