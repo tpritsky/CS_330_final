@@ -94,7 +94,7 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}"
+        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Steps{config.train_steps}"
         f"_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}_Dropout{config.dropout}"
     )
 
