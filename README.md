@@ -2,6 +2,7 @@
 ## Meta-learning for binding affinity prediction
 
 - `bert.py`: code for BERT-based black-box meta-learner.
+- `lstm.py`: code for LSTM-based black-box meta-learner.
+- `protonet.py`: code for prototypical network meta-learner.
 - `data_loader.py`: code for dataloader used for both BERT and LSTM models
 - `evaluation.ipynb`: script for evaluating a trained BERT or LSTM model
-- `
