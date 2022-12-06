@@ -1,4 +1,4 @@
-# CS330 Final Project: 
+# CS330 Final Project
 ## Meta-learning for binding affinity prediction
 
 - `bert.py`: code for BERT-based black-box meta-learner.
