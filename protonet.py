@@ -24,28 +24,25 @@ NUM_TEST_TASKS = 600
 
 
 class ProtoNetNetwork(nn.Module):
-    """Container for ProtoNet weights and image-to-latent computation."""
+    """Container for ProtoNet weights and input-to-latent computation."""
 
-    def __init__(self, input_dim, hidden_dim, embedding_dim):
-        """Inits ProtoNetNetwork.
+    def __init__(self, input_dim, hidden_dim, latent_dim):
+        """Inits ProtoNetNetwork
+        ProtoNetNetwork is a a 2 layer MLP that projects input vectors into the latent
+        (i.e. prototype embedding) space for nearest neighbors classification. 
 
-        The network consists of four convolutional blocks, each comprising a
-        convolution layer, a batch normalization layer, ReLU activation, and 2x2
-        max pooling for downsampling. There is an additional flattening
-        operation at the end.
-
-        Note that unlike conventional use, batch normalization is always done
-        with batch statistics, regardless of whether we are training or
-        evaluating. This technically makes meta-learning transductive, as
-        opposed to inductive.
+        Args:
+            input_dim (int): dimension of input embeddings
+            hidden_dim (int): dimension of MLP hidden layer
+            latent_dim (int): dimension of latent (i.e. prototype embedding) space
         """
         super(ProtoNetNetwork, self).__init__()
 
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.embedding_dim = embedding_dim
+        self.latent_dim = latent_dim
         self.fc1 = nn.Linear(self.input_dim, self.hidden_dim)
-        self.fc2 = nn.Linear(self.hidden_dim, self.embedding_dim)
+        self.fc2 = nn.Linear(self.hidden_dim, self.latent_dim)
 
         self._layers = nn.Sequential(
             self.fc1,
@@ -56,37 +53,41 @@ class ProtoNetNetwork(nn.Module):
 
         self.to(DEVICE)
 
-    def forward(self, images):
-        """Computes the latent representation of a batch of images.
+    def forward(self, inputs):
+        """Computes the latent representation of a batch of inputs.
 
         Args:
-            images (Tensor): batch of Omniglot images
-                shape (num_images, channels, height, width)
+            inputs (Tensor): batch of input vectors
+                shape (K, N, input_dim)
 
         Returns:
             a Tensor containing a batch of latent representations
-                shape (num_images, latents)
+                shape (K, N, latent_dim)
         """
-        return self._layers(images)
+        return self._layers(inputs)
 
 
 class ProtoNet:
     """Trains and assesses a prototypical network."""
 
-    def __init__(self, learning_rate, log_dir, input_dim, hidden_dim, embedding_dim, num_support):
+    def __init__(self, learning_rate, log_dir, input_dim, hidden_dim, latent_dim, num_support):
         """Inits ProtoNet.
 
         Args:
             learning_rate (float): learning rate for the Adam optimizer
             log_dir (str): path to logging directory
+            input_dim (int): dimension of input embeddings
+            hidden_dim (int): dimension of MLP hidden layer
+            latent_dim (int): dimension of latent (i.e. prototype embedding) space
+            num_support (int): K or number of support examples
         """
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.embedding_dim = embedding_dim
+        self.latent_dim = latent_dim
 
         self.num_support = num_support
 
-        self._network = ProtoNetNetwork(self.input_dim, self.hidden_dim, self.embedding_dim)
+        self._network = ProtoNetNetwork(self.input_dim, self.hidden_dim, self.latent_dim)
         self._optimizer = torch.optim.Adam(
             self._network.parameters(),
             lr=learning_rate
@@ -117,24 +118,19 @@ class ProtoNet:
         """Computes ProtoNet mean loss (and accuracy) on a batch of tasks.
 
         Args:
-            task_batch (tuple[Tensor, Tensor, Tensor, Tensor]):
-                batch of tasks from an Omniglot DataLoader
+            task_batch (tuple[Tensor, Tensor]):
+                tuple of (inputs, labels) from dataloader
+                    inputs ~ (B, K+Q, N, input_dim)
+                    labels ~ (B, K+Q, N, N)
 
         Returns:
             a Tensor containing mean ProtoNet loss over the batch
-                shape ()
             mean support set accuracy over the batch as a float
             mean query set accuracy over the batch as a float
         """
         loss_batch = []
         accuracy_support_batch = []
         accuracy_query_batch = []
-
-        # In HW2, task_batch is a list of B=16 task tuples -> each task tuple contains 4 tensors
-        # 1. images_support: shape (N=5*K=2, 1, H=28, W=28)
-        # 2. labels_support: shape (N=5*K=2,) <- tensor of ints corresponding to label class
-        # 3. images_query: shape (N=5 * 15, 1, H=28, W=28)
-        # 4. labels_support: shape (N=5 * 15,) <- tensor of ints corresponding to label class
 
         inputs, labels = task_batch
         # inputs ~ (B, K+Q, N, input_dim)
@@ -153,63 +149,27 @@ class ProtoNet:
         batch_support_labels = labels[:, :self.num_support, :]  # (B, K, N)
         batch_query_labels = labels[:, self.num_support:, :]  # (B, Q, N)
 
-        # TODO: compute prototypes across batch in one step
-        """
-        # 1. prototype embeddings
-        batch_support_embeddings = self._network(batch_support_inputs)  # (B, K, N, embedding_dim)
-        prototype_embeddings = torch.mean(batch_support_embeddings, dim=1)  # (B, N, embedding_dim)
-        # then compute mean embedding (size embedding_dim) for each of the N classes
-        # from the K embeddings for each class (reduce dim 1)
-        # output has shape (B, N, embedding_dim)
-
-        # 2. distance metric (squared euclidian distance)
-        batch_query_embeddings = self._network(batch_query_inputs)  # (B, Q, N, embedding_dim)
-        query_distances = torch.square(torch.cdist(batch_query_embeddings, prototype_embeddings))  # shape ~ (N * Q, N)
-        support_distances = torch.square(
-            torch.cdist(batch_support_embeddings, prototype_embeddings))  # shape ~ (N * K, N)
-        # torch.cdist(x1, x2, ...) defaults to p=2 i.e. Euclidean distance, expects x1 ~ (B, P, M), x2 ~ (B, R, M)
-
-        # 3. softmax of similarity score (-1 * distance)
-        logits_query = F.softmax(-1 * query_distances, dim=1)  # shape (N * Q, N)
-        logits_support = F.softmax(-1 * support_distances, dim=1)  # shape (N * K, N)
-        # dim=1 to perform softmax across cols -> every slice along dim=1 (cols) sums to 1
-
-        # 4. cross entropy loss and accuracy
-        loss = F.cross_entropy(logits_query, batch_query_labels)
-        accuracy_query = self._score(logits_query, batch_query_labels)
-        accuracy_support = self._score(logits_support, batch_support_labels)
-        """
-
-
-        # TODO: compute prototypes by iterating along dim 0
+        # Compute prototypes by iterating along dim 0
         for i in range(B):
-            images_support = batch_support_inputs[i].to(DEVICE)  # (K, N, embedding_dim)
+            inputs_support = batch_support_inputs[i].to(DEVICE)  # (K, N, embedding_dim)
             labels_support = batch_support_labels[i].to(DEVICE).flatten()  # (K*N,), CE loss & _score() expect 1D vector
-            images_query = batch_query_inputs[i].to(DEVICE)  # (Q, N, embedding_dim)
+            inputs_query = batch_query_inputs[i].to(DEVICE)  # (Q, N, embedding_dim)
             labels_query = batch_query_labels[i].to(DEVICE).flatten()  # (Q*N,), _score() expects 1D vector
-            # ********************************************************
-            # ******************* YOUR CODE HERE *********************
-            # ********************************************************
-            # TODO: finish implementing this method.
+            
             # For a given task, compute the prototypes and the protonet loss.
             # Use F.cross_entropy to compute classification losses.
-            # Use util.score to compute accuracies.
-            # Make sure to populate loss_batch, accuracy_support_batch, and
-            # accuracy_query_batch.
-
-            # Specifications for HW2
-            # N=5 classes, K=5 support example per class, Q=15 query examples per class
-            # default batch size B=16 (# tasks per outer loop update)
+            # Use _score() to compute accuracies.
+            # Populate loss_batch, accuracy_support_batch, accuracy_query_batch.
 
             # 1. prototype embeddings
-            images_support_embeddings = self._network(images_support)  # shape ~ (K, N, embedding_dim)
-            prototype_embeddings = torch.mean(images_support_embeddings, dim=0)  # shape ~ (N, embedding_dim)
+            inputs_support_embeddings = self._network(inputs_support)  # shape ~ (K, N, latent_dim)
+            prototype_embeddings = torch.mean(inputs_support_embeddings, dim=0)  # shape ~ (N, latent_dim)
             # for each of N classes, avg the K support embeddings to get prototype embedding
 
             # 2. distance metric (squared euclidian distance)
-            images_query_embeddings = self._network(images_query)  # shape ~ (Q, N, embedding_dim) # TODO may need images_query.reshape(-1, embedding_dim).
-            query_distances = torch.square(torch.cdist(images_query_embeddings.reshape(-1, self.embedding_dim), prototype_embeddings))  # shape ~ (N * Q, N)
-            support_distances = torch.square(torch.cdist(images_support_embeddings.reshape(-1, self.embedding_dim), prototype_embeddings))  # shape ~ (N * K, N)
+            inputs_query_embeddings = self._network(inputs_query)  # shape ~ (Q, N, latent_dim)
+            query_distances = torch.square(torch.cdist(inputs_query_embeddings.reshape(-1, self.latent_dim), prototype_embeddings))  # shape ~ (N * Q, N)
+            support_distances = torch.square(torch.cdist(inputs_support_embeddings.reshape(-1, self.latent_dim), prototype_embeddings))  # shape ~ (N * K, N)
             # torch.cdist(...) defaults to p=2 i.e. Euclidean distance, expects x1 ~ (B, P, M), x2 ~ (B, R, M)
 
             # 3. softmax of similarity score (-1 * distance)
@@ -226,9 +186,6 @@ class ProtoNet:
             accuracy_query_batch.append(accuracy_query)
             accuracy_support_batch.append(accuracy_support)
 
-            # ********************************************************
-            # ******************* YOUR CODE HERE *********************
-            # ********************************************************
         return (
             torch.mean(torch.stack(loss_batch)),
             np.mean(accuracy_support_batch),
@@ -239,13 +196,14 @@ class ProtoNet:
         """Train the ProtoNet.
 
         Consumes dataloader_train to optimize weights of ProtoNetNetwork
-        while periodically validating on dataloader_val, logging metrics, and
-        saving checkpoints.
+        Periodically validate on dataloader_val, logging metrics, and
+        save checkpoints.
 
         Args:
             dataloader_train (DataLoader): loader for train tasks
             dataloader_val (DataLoader): loader for validation tasks
             writer (SummaryWriter): TensorBoard logger
+            num_training_steps (int): number of steps to train for
         """
         print(f'Starting training at iteration {self._start_train_step}.')
         for i_step, task_batch in enumerate(
@@ -264,7 +222,7 @@ class ProtoNet:
                     f'support accuracy: {accuracy_support.item():.3f}, '
                     f'query accuracy: {accuracy_query.item():.3f}'
                 )
-                writer.add_scalar('loss/train', loss.item(), i_step)
+                writer.add_scalar('Loss/train', loss.item(), i_step)
                 writer.add_scalar(
                     'train_accuracy/support',
                     accuracy_support.item(),
@@ -297,7 +255,7 @@ class ProtoNet:
                     f'support accuracy: {accuracy_support:.3f}, '
                     f'query accuracy: {accuracy_query:.3f}'
                 )
-                writer.add_scalar('loss/val', loss, i_step)
+                writer.add_scalar('Loss/val', loss, i_step)
                 writer.add_scalar(
                     'val_accuracy/support',
                     accuracy_support,
@@ -376,7 +334,7 @@ def main(args):
     log_dir = args.log_dir
     if log_dir is None:
         log_dir = f'runs/protonet/{args.repr}.{args.dataset}.n:{args.num_classes}.k:{args.num_support}.' + \
-                  f'q:{args.num_query}.lr:{args.learning_rate}.hd:{args.hidden_dim}.embed:{args.embedding_dim}.batch_size:{args.meta_batch_size}'
+                  f'q:{args.num_query}.lr:{args.learning_rate}.hd:{args.hidden_dim}.embed:{args.latent_dim}.batch_size:{args.meta_batch_size}'
     print(f'log_dir: {log_dir}')
     writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
@@ -390,7 +348,7 @@ def main(args):
                         log_dir=log_dir,
                         input_dim=repr_to_input_dims[args.repr],
                         hidden_dim=args.hidden_dim,
-                        embedding_dim=args.embedding_dim,
+                        latent_dim=args.latent_dim,
                         num_support=args.num_support)
 
     if args.checkpoint_step > -1:
@@ -399,9 +357,6 @@ def main(args):
         print('Checkpoint loading skipped.')
 
     if not args.test:
-        # num_training_steps = args.meta_batch_size * (args.num_train_iterations -
-        #                                              args.checkpoint_step - 1)
-
         num_training_steps = args.meta_batch_size * args.num_train_iterations
         # number of tasks per outer-loop update * number of outer-loop updates to train for
 
@@ -411,22 +366,6 @@ def main(args):
             f'num_support={args.num_support}, '
             f'num_query={args.num_query}'
         )
-        # dataloader_train = omniglot.get_omniglot_dataloader(
-        #     'train',
-        #     args.meta_batch_size,
-        #     args.num_classes,
-        #     args.num_support,
-        #     args.num_query,
-        #     num_training_steps
-        # )
-        # dataloader_val = omniglot.get_omniglot_dataloader(
-        #     'val',
-        #     args.meta_batch_size,
-        #     args.num_classes,
-        #     args.num_support,
-        #     args.num_query,
-        #     args.meta_batch_size * 4
-        # )
 
         train_iterable = DataGenerator(
             data_json_path=f'data/train.json',
@@ -457,8 +396,6 @@ def main(args):
             )
         )
         protonet.train(
-            # dataloader_train,
-            # dataloader_val,
             train_loader,
             val_loader,
             writer,
@@ -471,14 +408,6 @@ def main(args):
             f'num_support={args.num_support}, '
             f'num_query={args.num_query}'
         )
-        # dataloader_test = omniglot.get_omniglot_dataloader(
-        #     'test',
-        #     1,
-        #     args.num_,
-        #     args.num_support,
-        #     args.num_query,
-        #     NUM_TEST_TASKS
-        # )
 
         test_iterable = DataGenerator(
             data_json_path=f'data/test.json',
@@ -504,9 +433,9 @@ if __name__ == '__main__':
                         help='number of classes in a task')
     parser.add_argument('--num_support', type=int, default=5,
                         help='number of support examples per class in a task')
-    parser.add_argument('--num_query', type=int, default=3,
+    parser.add_argument('--num_query', type=int, default=15,
                         help='number of query examples per class in a task')
-    parser.add_argument('--learning_rate', type=float, default=0.0001,
+    parser.add_argument('--learning_rate', type=float, default=0.00001,
                         help='learning rate for the network')
     parser.add_argument('--meta_batch_size', type=int, default=16,
                         help='number of tasks per outer-loop update')
@@ -518,15 +447,14 @@ if __name__ == '__main__':
                         help=('checkpoint iteration to load for resuming '
                               'training, or for evaluation (-1 is ignored)'))
 
-    # new CLI arguments
     parser.add_argument('--repr', type=str, default='concat_smiles_vaeprot',
                         help='representation of input proteins and ligands')
     parser.add_argument('--dataset', type=str, default='dev',
-                        help='representation of input proteins and ligands')
+                        help='dataset to train on: dev or full')
     parser.add_argument('--hidden_dim', type=int, default=128,
                         help='hidden dimension of ProtoNet MLP')
-    parser.add_argument('--embedding_dim', type=int, default=128,
-                        help='prototype embedding dimension')
+    parser.add_argument('--latent_dim', type=int, default=64,
+                        help='latent (i.e. prototype embedding) dimension')
     parser.add_argument("--num_workers", type=int, default=4)
 
 
