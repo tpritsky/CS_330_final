@@ -11,16 +11,11 @@ from torch.utils import tensorboard
 
 from data_loader import DataGenerator
 
-NUM_INPUT_CHANNELS = 1
-NUM_HIDDEN_CHANNELS = 64
-KERNEL_SIZE = 3
-NUM_CONV_LAYERS = 4
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 SUMMARY_INTERVAL = 10
 SAVE_INTERVAL = 100
 PRINT_INTERVAL = 10
 VAL_INTERVAL = PRINT_INTERVAL * 5
-NUM_TEST_TASKS = 600
 
 
 class ProtoNetNetwork(nn.Module):
@@ -70,7 +65,7 @@ class ProtoNetNetwork(nn.Module):
 class ProtoNet:
     """Trains and assesses a prototypical network."""
 
-    def __init__(self, learning_rate, log_dir, input_dim, hidden_dim, latent_dim, num_support):
+    def __init__(self, learning_rate, log_dir, input_dim, hidden_dim, latent_dim, num_support, save_name):
         """Inits ProtoNet.
 
         Args:
@@ -84,8 +79,8 @@ class ProtoNet:
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
-
         self.num_support = num_support
+        self.save_name = save_name
 
         self._network = ProtoNetNetwork(self.input_dim, self.hidden_dim, self.latent_dim)
         self._optimizer = torch.optim.Adam(
@@ -205,6 +200,8 @@ class ProtoNet:
             writer (SummaryWriter): TensorBoard logger
             num_training_steps (int): number of steps to train for
         """
+        best_val_query_acc = 0
+
         print(f'Starting training at iteration {self._start_train_step}.')
         for i_step, task_batch in enumerate(
                 dataloader_train,
@@ -266,9 +263,12 @@ class ProtoNet:
                     accuracy_query,
                     i_step
                 )
+                # save model with best val query accuracy
+                if accuracy_query > best_val_query_acc:
+                    torch.save(self._network, f'model/{self.save_name}.pt')
 
-            if i_step % SAVE_INTERVAL == 0:
-                self._save(i_step)
+            # if i_step % SAVE_INTERVAL == 0:
+            #     self._save(i_step)
 
             if i_step >= num_training_steps:
                 break  # stop after training for num_training_steps
@@ -280,7 +280,10 @@ class ProtoNet:
             dataloader_test (DataLoader): loader for test tasks
         """
         accuracies = []
-        for task_batch in dataloader_test:
+        NUM_TEST_TASKS = 1000
+        for _ in tqdm(range(N)):
+            task_batch = next(dataloader_test)
+            task_batch = task_batch.to(DEVICE)
             accuracies.append(self._step(task_batch)[2])
         mean = np.mean(accuracies)
         std = np.std(accuracies)
@@ -291,41 +294,29 @@ class ProtoNet:
             f'95% confidence interval {mean_95_confidence_interval:.3f}'
         )
 
-    def load(self, checkpoint_step):
+    def load(self, model_checkpoint):
         """Loads a checkpoint.
 
         Args:
-            checkpoint_step (int): iteration of checkpoint to load
+            model_checkpoint (str): path of model checkpoint file to load
 
         Raises:
-            ValueError: if checkpoint for checkpoint_step is not found
+            ValueError: if file is not found
         """
-        target_path = (
-            f'{os.path.join(self._log_dir, "state")}'
-            f'{checkpoint_step}.pt'
-        )
-        if os.path.isfile(target_path):
-            state = torch.load(target_path)
-            self._network.load_state_dict(state['network_state_dict'])
-            self._optimizer.load_state_dict(state['optimizer_state_dict'])
-            self._start_train_step = checkpoint_step + 1
-            print(f'Loaded checkpoint iteration {checkpoint_step}.')
+        if os.path.isfile(model_checkpoint):
+            self._network = torch.load(model_checkpoint).to(DEVICE)
         else:
             raise ValueError(
-                f'No checkpoint for iteration {checkpoint_step} found.'
+                f'No file {model_checkpoint} found.'
             )
 
-    def _save(self, checkpoint_step):
-        """Saves network and optimizer state_dicts as a checkpoint.
+    def _save(self, model_checkpoint_path):
+        """Saves model state as a checkpoint.
 
         Args:
-            checkpoint_step (int): iteration to label checkpoint with
+            model_checkpoint_path (str): file path for model checkpoint file to save
         """
-        torch.save(
-            dict(network_state_dict=self._network.state_dict(),
-                 optimizer_state_dict=self._optimizer.state_dict()),
-            f'{os.path.join(self._log_dir, "state")}{checkpoint_step}.pt'
-        )
+        torch.save(self._network, f'{model_checkpoint_path}.pt')
         print('Saved checkpoint.')
 
 
@@ -334,7 +325,8 @@ def main(args):
     log_dir = args.log_dir
     if log_dir is None:
         log_dir = f'runs/protonet/{args.repr}.{args.dataset}.n:{args.num_classes}.k:{args.num_support}.' + \
-                  f'q:{args.num_query}.lr:{args.learning_rate}.hd:{args.hidden_dim}.embed:{args.latent_dim}.batch_size:{args.meta_batch_size}'
+                  f'q:{args.num_query}.lr:{args.learning_rate}.hd:{args.hidden_dim}.embed:{args.latent_dim}.' + \
+                  f'batch_size:{args.meta_batch_size}.train_iter:{args.num_train_iterations}'
     print(f'log_dir: {log_dir}')
     writer = tensorboard.SummaryWriter(log_dir=log_dir)
 
@@ -349,7 +341,8 @@ def main(args):
                         input_dim=repr_to_input_dims[args.repr],
                         hidden_dim=args.hidden_dim,
                         latent_dim=args.latent_dim,
-                        num_support=args.num_support)
+                        num_support=args.num_support,
+                        save_name=args.save)
 
     if args.checkpoint_step > -1:
         protonet.load(args.checkpoint_step)
@@ -435,28 +428,28 @@ if __name__ == '__main__':
                         help='number of support examples per class in a task')
     parser.add_argument('--num_query', type=int, default=15,
                         help='number of query examples per class in a task')
-    parser.add_argument('--learning_rate', type=float, default=0.00001,
+    parser.add_argument('--learning_rate', type=float, default=1e-5,
                         help='learning rate for the network')
-    parser.add_argument('--meta_batch_size', type=int, default=16,
+    parser.add_argument('--meta_batch_size', type=int, default=100,
                         help='number of tasks per outer-loop update')
-    parser.add_argument('--num_train_iterations', type=int, default=5000,
+    parser.add_argument('--num_train_iterations', type=int, default=500,
                         help='number of outer-loop updates to train for')
     parser.add_argument('--test', default=False, action='store_true',
                         help='train or test')
     parser.add_argument('--checkpoint_step', type=int, default=-1,
                         help=('checkpoint iteration to load for resuming '
                               'training, or for evaluation (-1 is ignored)'))
-
-    parser.add_argument('--repr', type=str, default='concat_smiles_vaeprot',
+    parser.add_argument('--repr', type=str, default='smiles_only',
                         help='representation of input proteins and ligands')
-    parser.add_argument('--dataset', type=str, default='dev',
+    # "smiles_only", "concat", "concat_smiles_vaeprot"
+    parser.add_argument('--dataset', type=str, default='full',
                         help='dataset to train on: dev or full')
     parser.add_argument('--hidden_dim', type=int, default=128,
                         help='hidden dimension of ProtoNet MLP')
     parser.add_argument('--latent_dim', type=int, default=64,
                         help='latent (i.e. prototype embedding) dimension')
     parser.add_argument("--num_workers", type=int, default=4)
-
+    parser.add_argument("--save", type=str)
 
     main_args = parser.parse_args()
     main(main_args)
