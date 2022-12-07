@@ -94,7 +94,7 @@ def main(config):
         device = torch.device("cpu")
 
     writer = SummaryWriter(
-        f"runs/{config.repr}_{config.dataset}_N{config.num_classes}_K{config.num_shot}_Steps{config.train_steps}"
+        f"runs/{config.repr}_N{config.num_classes}_K{config.num_shot}_Steps{config.train_steps}"
         f"_Seed{config.random_seed}_HiddenDim{config.hidden_dim}_LR{config.learning_rate}_Dropout{config.dropout}"
     )
 
@@ -152,19 +152,19 @@ def main(config):
     times = []
     best_val_acc = 0
     for step in tqdm(range(config.train_steps)):
-        ## Sample Batch
+        # Sample Batch
         t0 = time.time()
         i, l = next(train_loader)
         i, l = i.to(device), l.to(device)
         t1 = time.time()
 
-        ## Train
+        # Train
         _, ls = train_step(i, l, model, optim)
         t2 = time.time()
         writer.add_scalar("Loss/train", ls, step)
         times.append([t1 - t0, t2 - t1])
 
-        ## Evaluate
+        # Evaluate
         if (step + 1) % config.eval_freq == 0:
             print("*" * 5 + "Iter " + str(step + 1) + "*" * 5)
             i, l = next(test_loader)
@@ -227,8 +227,6 @@ if __name__ == "__main__":
     parser.add_argument("--image_caching", type=bool, default=True)
     parser.add_argument("--repr", type=str, default="smiles_only")
     # "smiles_only", "concat", "vaesmiles_only", "concat_smiles_vaeprot", "concat_after"
-    parser.add_argument("--dataset", type=str, default="dev")
-    # "dev", "full"
     parser.add_argument("--dropout", type=float, default=0.35)
     parser.add_argument("--save", type=str)
     main(parser.parse_args())
