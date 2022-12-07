@@ -224,7 +224,6 @@ if __name__ == "__main__":
     parser.add_argument("--random_seed", type=int, default=123)
     parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--train_steps", type=int, default=25000)
-    parser.add_argument("--image_caching", type=bool, default=True)
     parser.add_argument("--repr", type=str, default="smiles_only")
     # "smiles_only", "concat", "vaesmiles_only", "concat_smiles_vaeprot", "concat_after"
     parser.add_argument("--dropout", type=float, default=0.35)
