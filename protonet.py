@@ -1,8 +1,6 @@
-"""Implementation of prototypical networks for Omniglot."""
-
 import argparse
 import os
-
+import tqdm
 import numpy as np
 import torch
 from torch import nn
@@ -12,7 +10,6 @@ from torch.utils import tensorboard
 from data_loader import DataGenerator
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-SUMMARY_INTERVAL = 10
 SAVE_INTERVAL = 100
 PRINT_INTERVAL = 10
 VAL_INTERVAL = PRINT_INTERVAL * 5
@@ -134,10 +131,6 @@ class ProtoNet:
         labels = torch.argmax(labels.float(), axis=-1)  # convert one-hot to int label -> (B, K+Q, N)
 
         B = inputs.shape[0]
-        K = self.num_support
-        Q = inputs.shape[1] - K
-        N = inputs.shape[2]
-        # D = inputs.shape[3]
 
         batch_support_inputs = inputs[:, :self.num_support, :, :]  # (B, K, N, input_dim)
         batch_query_inputs = inputs[:, self.num_support:, :, :]  # (B, Q, N, input_dim)
@@ -234,7 +227,6 @@ class ProtoNet:
             if i_step % VAL_INTERVAL == 0:
                 with torch.no_grad():
                     losses, accuracies_support, accuracies_query = [], [], []
-                    # for val_task_batch in dataloader_val: <- eval on 'full' validation set (args.meta_batch_size * 4) from dataloader_val in main())
                     val_task_batch = next(dataloader_val)  # eval on 1 batch from validation set // MANN
                     loss, accuracy_support, accuracy_query = (
                         self._step(val_task_batch)
@@ -267,9 +259,6 @@ class ProtoNet:
                 if accuracy_query > best_val_query_acc:
                     torch.save(self._network, f'model/{self.save_name}.pt')
 
-            # if i_step % SAVE_INTERVAL == 0:
-            #     self._save(i_step)
-
             if i_step >= num_training_steps:
                 break  # stop after training for num_training_steps
 
@@ -281,7 +270,7 @@ class ProtoNet:
         """
         accuracies = []
         NUM_TEST_TASKS = 1000
-        for _ in tqdm(range(N)):
+        for _ in tqdm(range(NUM_TEST_TASKS)):
             task_batch = next(dataloader_test)
             task_batch = task_batch.to(DEVICE)
             accuracies.append(self._step(task_batch)[2])
@@ -324,7 +313,7 @@ def main(args):
     # Initialize Tensorboard logging
     log_dir = args.log_dir
     if log_dir is None:
-        log_dir = f'runs/protonet/{args.repr}.{args.dataset}.n:{args.num_classes}.k:{args.num_support}.' + \
+        log_dir = f'runs/protonet/{args.repr}.n:{args.num_classes}.k:{args.num_support}.' + \
                   f'q:{args.num_query}.lr:{args.learning_rate}.hd:{args.hidden_dim}.embed:{args.latent_dim}.' + \
                   f'batch_size:{args.meta_batch_size}.train_iter:{args.num_train_iterations}'
     print(f'log_dir: {log_dir}')
@@ -439,11 +428,8 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_step', type=int, default=-1,
                         help=('checkpoint iteration to load for resuming '
                               'training, or for evaluation (-1 is ignored)'))
-    parser.add_argument('--repr', type=str, default='smiles_only',
+    parser.add_argument('--repr', type=str, default='smiles_only',  # "smiles_only", "concat", "concat_smiles_vaeprot"
                         help='representation of input proteins and ligands')
-    # "smiles_only", "concat", "concat_smiles_vaeprot"
-    parser.add_argument('--dataset', type=str, default='full',
-                        help='dataset to train on: dev or full')
     parser.add_argument('--hidden_dim', type=int, default=128,
                         help='hidden dimension of ProtoNet MLP')
     parser.add_argument('--latent_dim', type=int, default=64,
